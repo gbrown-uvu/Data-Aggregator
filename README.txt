@@ -1,5 +1,5 @@
 ﻿Rush Power Sports LLC - eBay Data Aggregation Tool
-Version: 1.0 (December 2025)
+Version: 1.0 (February 2026)
 Purpose: Fetch eBay sales data, store it reliably, and generate detailed profit reports broken down by machine model and year.
 Overview
 This tool helps track which ATV/UTV parts and machines are selling best on eBay.
@@ -85,4 +85,5 @@ Create a desktop shortcut: Right-click the .exe → Send to → Desktop (create 
 Then right-click shortcut → Properties → Change Icon → browse to favicon.ico
 When adding ‘Stop Words’ to fix machine title issues, make sure to add the entire word you want it to stop at. For example, if the title is: 
 1983 Honda ATC200X (SEAT, SADDLE) (MOUNTING BRACKET MOUNT LATCH A332
+
 Then to stop at the correct spot, you would add  (SEAT,  to the list of stop words rather than just SEAT
