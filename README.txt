@@ -1,5 +1,5 @@
 ﻿Rush Power Sports LLC - eBay Data Aggregation Tool
-Version: 1.0 (February 2026)
+Version: 1.1 (April 2026)
 Purpose: Fetch eBay sales data, store it reliably, and generate detailed profit reports broken down by machine model and year.
 Overview
 This tool helps track which ATV/UTV parts and machines are selling best on eBay.
