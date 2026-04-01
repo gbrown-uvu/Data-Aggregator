@@ -5,12 +5,14 @@ Simple GUI for updating eBay sales data and generating machine profit reports.
 import customtkinter as CTk
 import yaml
 import json
+import threading
 from pathlib import Path
 from tkinter import filedialog
 
 import create_database
 import eBay_interface
 import aggregate
+import mask_entry
 
 CTk.set_default_color_theme("blue")
 
@@ -33,6 +35,11 @@ class GUI(CTk.CTk):
         self.geometry("600x400")
         self.minsize(500, 350)
         CTk.set_appearance_mode("dark")
+
+        self.update_thread = None
+        self.cancel_event = None
+        self.update_btn = None
+        self.create_btn = None
 
         self.center_window(600, 400)
         self.grid_columnconfigure(0, weight=1)
@@ -77,15 +84,19 @@ class GUI(CTk.CTk):
             font=CTk.CTkFont(size=32, weight="bold")
         ).grid(row=0, column=0, pady=(40, 20), sticky="nsew")
 
-        CTk.CTkButton(
+        # Update Info button (will become Cancel during update)
+        self.update_btn = CTk.CTkButton(
             self, text="Update Info", command=self.update_info,
             height=50, font=CTk.CTkFont(size=18, weight="bold"), corner_radius=12
-        ).grid(row=1, column=0, padx=100, pady=10, sticky="ew")
+        )
+        self.update_btn.grid(row=1, column=0, padx=100, pady=10, sticky="ew")
 
-        CTk.CTkButton(
+        # Create File button (disabled during update)
+        self.create_btn = CTk.CTkButton(
             self, text="Create File", command=self.create_file,
             height=50, font=CTk.CTkFont(size=18, weight="bold"), corner_radius=12
-        ).grid(row=2, column=0, padx=100, pady=10, sticky="ew")
+        )
+        self.create_btn.grid(row=2, column=0, padx=100, pady=10, sticky="ew")
 
         self.status = CTk.CTkLabel(
             self, text="Ready", font=CTk.CTkFont(size=16, weight="bold")
@@ -107,20 +118,69 @@ class GUI(CTk.CTk):
             )
             return
 
+        if self.update_thread and self.update_thread.is_alive():
+            return  # already running
+
+        self.cancel_event = threading.Event()
         self.status_update("Updating from eBay...")
+
+        # Change button to Cancel
+        self.update_btn.configure(text="Cancel", command=self.cancel_update)
+        # Lock Create File button
+        self.create_btn.configure(state="disabled")
+
+        # Run the heavy work in a background thread
+        self.update_thread = threading.Thread(
+            target=self._run_ebay_update, daemon=True
+        )
+        self.update_thread.start()
+
+    def _run_ebay_update(self):
+        """Background thread target – keeps GUI responsive."""
+        success = True
         try:
-            eBay_interface.main()
-            self.status_update("Info Updated.")
+            eBay_interface.main(cancel_event=self.cancel_event)
         except Exception as e:
-            self.status_update(f"Error: {e}")
+            success = False
+            error_msg = str(e)
+            self.after(0, lambda: self.status_update(f"Error: {error_msg}"))
+
+        # Always return to normal UI state (on main thread)
+        def finish_ui():
+            if not success:
+                pass  # error message already shown
+            elif self.cancel_event and self.cancel_event.is_set():
+                self.status_update("Update Cancelled — no changes saved.")
+            else:
+                self.status_update("Info Updated.")
+
+            # Revert buttons
+            self.update_btn.configure(text="Update Info", command=self.update_info)
+            self.create_btn.configure(state="normal")
+
+            self.cancel_event = None
+            self.update_thread = None
+
+        self.after(0, finish_ui)
+
+    def cancel_update(self):
+        """Called when user clicks the Cancel button."""
+        if self.cancel_event:
+            self.cancel_event.set()
+            self.status_update("Cancelling...")
 
     def create_file(self):
         self.status_update("Creating report...")
         try:
-            aggregate.main(parent=self)
-            self.status_update("Report Created.")
+            success = aggregate.main(parent=self)
+            
+            if success:
+                self.status_update("Report Created.")
+            else:
+                self.status_update("Save Cancelled.")
+                
         except Exception as e:
-            self.status_update(f"Error: {e}")
+            self.status_update(f"Error: {str(e)}")
 
     def load_yaml_config(self) -> dict:
         path = Path("ebay.yaml")
@@ -155,7 +215,6 @@ class GUI(CTk.CTk):
         tab_api = tabs.add("eBay API")
         tab_stop = tabs.add("Stop Words")
 
-        # API tab
         CTk.CTkLabel(tab_api, text="eBay API Configuration",
                      font=CTk.CTkFont(size=18, weight="bold")).pack(pady=15)
 
@@ -163,22 +222,40 @@ class GUI(CTk.CTk):
         api_frame.pack(padx=20, pady=10, fill="both", expand=True)
 
         config = self.load_yaml_config()
-        entries = {}
+        entries = {}   # will hold our FixedMaskEntry objects
+
         fields = [("appid", "App ID"), ("devid", "Dev ID"),
                   ("certid", "Cert ID"), ("token", "Auth Token")]
 
-        for key, label in fields:
+        for key, label_text in fields:
             row = CTk.CTkFrame(api_frame)
             row.pack(fill="x", padx=20, pady=10)
-            CTk.CTkLabel(row, text=label + ":", width=130, anchor="w").pack(side="left")
-            show = "*" if key == "token" else ""
-            entry = CTk.CTkEntry(row, width=350, show=show)
-            entry.pack(side="right", padx=(10, 0))
-            if key != "token":
-                entry.insert(0, config.get(key, ""))
+
+            CTk.CTkLabel(row, text=label_text + ":", width=130, anchor="w").pack(side="left")
+
+            # Use our new fixed-mask entry (initially masked)
+            entry = mask_entry.MaskEntry(row, mask_length=15, width=280)
+            entry.pack(side="left", padx=(10, 5), fill="x", expand=True)
+            
+            # Load existing value (masked by default)
+            existing = config.get(key, "")
+            entry.set_real(existing)
+            
             entries[key] = entry
 
-        # Stop words tab
+            # Show / Hide button
+            toggle_btn = CTk.CTkButton(row, text="Show", width=60)
+            toggle_btn.pack(side="left")
+
+            def make_toggle(e=entry, b=toggle_btn):
+                def toggle():
+                    e.toggle_mask()
+                    b.configure(text="Hide" if not e._is_masked else "Show")
+                return toggle
+
+            toggle_btn.configure(command=make_toggle())
+
+        # ==================== Stop Words tab ====================
         CTk.CTkLabel(tab_stop, text="Stop Words Management",
                      font=CTk.CTkFont(size=18, weight="bold")).pack(pady=15)
 

@@ -209,9 +209,9 @@ def main(parent=None):
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
     )
 
-    if not file_path:
+    if not file_path:          # This catches Cancel (returns "")
         print("Save cancelled.")
-        return
+        return False           # ← Tell GUI user cancelled
 
     with open(file_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -222,6 +222,8 @@ def main(parent=None):
     if rows:
         top = rows[0]
         print(f"Top performer → {top['Machine Name']} {top['Year']} | ${top['Total Profit']:,}")
+
+    return True
 
 
 if __name__ == "__main__":

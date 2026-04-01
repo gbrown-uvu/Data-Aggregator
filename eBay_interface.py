@@ -50,7 +50,8 @@ def insert_sale(cursor, sale: dict) -> None:
     ))
 
 
-def main():
+def main(cancel_event=None):
+    """Main update function. Now accepts an optional cancel_event for graceful stopping."""
     if not Path(DB_FILE).exists():
         print(f"Database not found: {DB_FILE}")
         print("Please run create_database.py first!")
@@ -73,8 +74,14 @@ def main():
 
     current = start_date
     new_sales = 0
+    cancelled = False
 
     while current < end_date:
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            print("Cancellation requested — aborting without saving changes.")
+            break
+
         chunk_start = current
         chunk_end = min(current + timedelta(days=CHUNK_DAYS), end_date)
 
@@ -82,6 +89,11 @@ def main():
 
         page = 1
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                cancelled = True
+                print("Cancellation requested — aborting...")
+                break
+
             try:
                 response = api.execute("GetSellerTransactions", {
                     "ModTimeFrom": chunk_start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
@@ -155,12 +167,11 @@ def main():
         current = chunk_end + timedelta(seconds=1)
         time.sleep(1)
 
-    conn.commit()
-    conn.close()
-
-    print(f"\nDone! Added {new_sales:,} new sales.")
-    print(f"Total records now: {existing_count + new_sales:,}")
-
-
-if __name__ == "__main__":
-    main()
+    if not cancelled:
+        conn.commit()
+        conn.close()
+        print(f"\nDone! Added {new_sales:,} new sales.")
+        print(f"Total records now: {existing_count + new_sales:,}")
+    else:
+        conn.close()
+        print("\nUpdate cancelled by user — no new data saved.")
