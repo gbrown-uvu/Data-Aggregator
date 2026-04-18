@@ -8,6 +8,8 @@ import json
 import threading
 from pathlib import Path
 from tkinter import filedialog
+import webbrowser
+import tkinter.messagebox as tk_messagebox
 
 import create_database
 import eBay_interface
@@ -32,7 +34,7 @@ class GUI(CTk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Aggregation Tool")
-        self.geometry("600x400")
+        self.geometry("600x425")
         self.minsize(500, 350)
         CTk.set_appearance_mode("dark")
 
@@ -41,7 +43,7 @@ class GUI(CTk.CTk):
         self.update_btn = None
         self.create_btn = None
 
-        self.center_window(600, 400)
+        self.center_window(600, 425)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure((0, 1, 2, 3), weight=1)
 
@@ -55,6 +57,14 @@ class GUI(CTk.CTk):
             font=CTk.CTkFont(size=20), command=self.open_settings
         )
         self.settings_btn.place(relx=0.95, rely=0.05, anchor="ne")
+
+        # Help button (bottom right)
+        self.help_btn = CTk.CTkButton(
+            self, text="?", width=40, height=40, corner_radius=20,
+            fg_color="transparent", hover_color=("#3a7ebf", "#2a5d8f"),
+            font=CTk.CTkFont(size=20), command=self.open_readme
+        )
+        self.help_btn.place(relx=0.95, rely=0.95, anchor="se")
 
     def center_window(self, w: int, h: int):
         self.update_idletasks()
@@ -84,14 +94,14 @@ class GUI(CTk.CTk):
             font=CTk.CTkFont(size=32, weight="bold")
         ).grid(row=0, column=0, pady=(40, 20), sticky="nsew")
 
-        # Update Info button (will become Cancel during update)
+        # Update Info button
         self.update_btn = CTk.CTkButton(
             self, text="Update Info", command=self.update_info,
             height=50, font=CTk.CTkFont(size=18, weight="bold"), corner_radius=12
         )
         self.update_btn.grid(row=1, column=0, padx=100, pady=10, sticky="ew")
 
-        # Create File button (disabled during update)
+        # Create File button
         self.create_btn = CTk.CTkButton(
             self, text="Create File", command=self.create_file,
             height=50, font=CTk.CTkFont(size=18, weight="bold"), corner_radius=12
@@ -325,6 +335,32 @@ class GUI(CTk.CTk):
 
         CTk.CTkButton(btns, text="Save All", width=140, command=save).pack(side="left", padx=20)
         CTk.CTkButton(btns, text="Cancel", width=140, command=win.destroy).pack(side="right", padx=20)
+
+    def open_readme(self):
+        """Open README.txt with the default system viewer."""
+        readme_path = Path("README.txt").resolve()   # .resolve() makes it absolute
+
+        if readme_path.exists():
+            try:
+                # Use absolute path as string (more reliable across platforms)
+                webbrowser.open(readme_path.as_uri())
+                self.status_update("Opened README.txt")
+            except Exception as e:
+                self.status_update(f"Could not open README: {e}")
+                # Fallback to standard tkinter messagebox
+                tk_messagebox.showerror(
+                    title="Error Opening README",
+                    message=f"Could not open README.txt:\n\n{str(e)}\n\n"
+                            "Make sure the file exists in the program folder."
+                )
+        else:
+            self.status_update("README.txt not found")
+            tk_messagebox.showwarning(
+                title="README Not Found",
+                message="README.txt was not found in the application folder.\n\n"
+                        "Please create a file named 'README.txt' in the same folder "
+                        "as GUI.py and paste the README content into it."
+            )
 
     def _load_stop_words_for_display(self) -> list[str]:
         path = Path("stop_words.json")
